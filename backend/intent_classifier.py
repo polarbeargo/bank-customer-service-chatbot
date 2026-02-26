@@ -52,7 +52,9 @@ class IntentClassifier:
             "loan balance", "owe", "outstanding", "debt", "loan amount"
         ],
         Intent.OPENING_BRANCH: [
-            "opening branch", "where opened", "which branch"
+            "opening branch", "where opened", "which branch", "account from",
+            "account opened", "opened account", "branch is my account",
+            "where was my account opened", "where did i open"
         ]
     }
     
