@@ -79,7 +79,6 @@ sequenceDiagram
    participant Session as 📋 Session<br/>Store
    participant Engine as 💬 ConversationSession
    participant Intent as 🧠 Intent<br/>Classifier
-   participant Verify as ✓ Verification
    participant Response as 💬 Response<br/>Handler
    participant Data as 📊 Customer<br/>Data
    participant Audit as 🧾 Audit<br/>Logger
@@ -107,13 +106,12 @@ sequenceDiagram
       API->>Engine: process_message(message)
       Engine->>Intent: Classify intent
       Intent-->>Engine: intent + confidence
-      Note over Engine: Check if sensitive
         
       alt Sensitive Query
-         Engine->>Verify: Check verification status
+         Note over Engine: Check if verified
          alt Not Verified
-            Engine->>Response: Build verification prompt
-            Response-->>Engine: Verification required
+            Note over Engine: Build verification prompt
+            Engine-->>API: Return verification prompt
          else Verified
             Engine->>Response: Generate response
             Response->>Data: Get customer info
@@ -122,8 +120,7 @@ sequenceDiagram
          end
       else Public Query
          Engine->>Response: Generate response
-         Response->>Data: Get info (if needed)
-         Data-->>Response: Return info
+         Note over Response: Use config constants<br/>(no Data access needed)
          Response-->>Engine: Generated response
       end
 
@@ -150,6 +147,11 @@ sequenceDiagram
 - **Python 3.8+** with pip
 - **Node.js 14+** with npm/yarn
 - **Git**
+
+```
+git clone https://github.com/polarbeargo/bank-customer-service-chatbot.git
+cd bank-customer-service-chatbot
+```
 
 ### One-Command Dev (Fixed Ports)
 
