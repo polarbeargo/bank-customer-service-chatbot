@@ -151,6 +151,11 @@ sequenceDiagram
 - **Node.js 14+** with npm/yarn
 - **Git**
 
+```
+git clone https://github.com/polarbeargo/bank-customer-service-chatbot.git
+cd bank-customer-service-chatbot
+```
+
 ### One-Command Dev (Fixed Ports)
 
 ```bash
