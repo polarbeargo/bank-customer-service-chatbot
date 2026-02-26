@@ -8,12 +8,14 @@ from intent_classifier import Intent, IntentClassifier
 from customer_data import CustomerDataManager
 from response_handler import ResponseHandler
 from security import SecurityValidator, InputValidator
+from audit_logger import audit_logger, AuditEventType
 
 
 class ConversationSession:
     """Manages a single customer conversation session."""
     
-    def __init__(self):
+    def __init__(self, session_id: Optional[str] = None):
+        self.session_id = session_id
         self.verified_customer_id: Optional[str] = None
         self.verification_attempts = 0
         self.max_verification_attempts = 3
@@ -62,6 +64,15 @@ class ConversationSession:
                 return response
 
         response = self.response_handler.handle_query(intent, self.verified_customer_id)
+        
+        if IntentClassifier.is_sensitive_query(intent) and self.verified_customer_id:
+            audit_logger.log_sensitive_access(
+                user_id=self.verified_customer_id,
+                session_id=self.session_id,
+                ip_address='unknown',
+                data_type=intent.name
+            )
+        
         is_valid, error = SecurityValidator.validate_response(response)
         if not is_valid:
             response = "An error occurred while processing your request. Please try again."
@@ -125,6 +136,16 @@ class ConversationSession:
         
         if not success:
             attempts_remaining = self.max_verification_attempts - self.verification_attempts
+            audit_logger.log_event(
+                event_type=AuditEventType.VERIFICATION_FAILURE,
+                session_id=self.session_id,
+                details={
+                    "attempts": self.verification_attempts,
+                    "attempts_remaining": attempts_remaining,
+                    "reason": result
+                }
+            )
+            
             if attempts_remaining > 0:
                 return (
                     f"Verification failed: {result}\n"
@@ -140,6 +161,14 @@ class ConversationSession:
         
         self.verified_customer_id = result
         self.verification_attempts = 0
+        
+        audit_logger.log_event(
+            event_type=AuditEventType.VERIFICATION_SUCCESS,
+            session_id=self.session_id,
+            user_id=result,
+            details={"attempts": self.verification_attempts}
+        )
+        
         intent = self.pending_intent
         self.pending_intent = None
 
