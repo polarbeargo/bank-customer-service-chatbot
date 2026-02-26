@@ -1,0 +1,10 @@
+{
+  "name": "bank-customer-service-chatbot-root",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "bash scripts/dev.sh",
+    "start": "bash scripts/dev.sh",
+    "smoke": "bash scripts/smoke_test.sh"
+  }
+}
