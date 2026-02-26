@@ -48,6 +48,11 @@ yarn.lock
 *.swo
 *~
 *.sublime-workspace
+
+# Logs
+*.log
+logs/
+!logs/.gitkeep
 *.sublime-project
 
 # Environment variables
