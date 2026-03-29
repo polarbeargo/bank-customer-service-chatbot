@@ -4,15 +4,7 @@ Handles sensitive data protection and validation.
 """
 
 import re
-from typing import Optional, Set
-
-SENSITIVE_PATTERNS = [
-    r'password',
-    r'pin',
-    r'secret',
-    r'token',
-    r'credential'
-]
+from typing import Optional, Tuple
 
 FORBIDDEN_KEYWORDS = [
     'password',
@@ -23,6 +15,19 @@ FORBIDDEN_KEYWORDS = [
     'token'
 ]
 
+PROMPT_LEAKAGE_PATTERNS = [
+    r'system\s+prompt',
+    r'internal\s+instructions',
+    r'hidden\s+instructions',
+    r'developer\s+message',
+    r'chain\s+of\s+thought'
+]
+
+COMPILED_PROMPT_LEAKAGE_PATTERNS: Tuple[re.Pattern[str], ...] = tuple(
+    re.compile(pattern, flags=re.IGNORECASE)
+    for pattern in PROMPT_LEAKAGE_PATTERNS
+)
+
 
 class SecurityValidator:
     """Validates responses for security violations."""
@@ -31,10 +36,12 @@ class SecurityValidator:
     def contains_sensitive_data(text: str) -> bool:
         """Check if text contains forbidden sensitive keywords."""
         text_lower = text.lower()
-        for keyword in FORBIDDEN_KEYWORDS:
-            if keyword in text_lower:
-                return True
-        return False
+        return any(keyword in text_lower for keyword in FORBIDDEN_KEYWORDS)
+
+    @staticmethod
+    def contains_prompt_leakage(text: str) -> bool:
+        """Detect output that looks like prompt or internal policy leakage."""
+        return any(pattern.search(text) for pattern in COMPILED_PROMPT_LEAKAGE_PATTERNS)
     
     @staticmethod
     def validate_response(response: str) -> tuple[bool, Optional[str]]:
@@ -44,6 +51,9 @@ class SecurityValidator:
         """
         if SecurityValidator.contains_sensitive_data(response):
             return False, "Response contains forbidden sensitive information"
+
+        if SecurityValidator.contains_prompt_leakage(response):
+            return False, "Response contains potential prompt leakage"
         
         return True, None
     
@@ -58,6 +68,10 @@ class SecurityValidator:
                 sanitized,
                 flags=re.IGNORECASE
             )
+
+        if SecurityValidator.contains_prompt_leakage(sanitized):
+            return "I can only provide approved banking support information."
+
         return sanitized
 
 

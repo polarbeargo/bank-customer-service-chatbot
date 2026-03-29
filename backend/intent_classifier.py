@@ -3,8 +3,9 @@ Intent classification module.
 Determines what the customer is asking for.
 """
 
-from typing import Optional, Tuple
+import re
 from enum import Enum
+from typing import Dict, List, Pattern, Tuple
 
 
 class Intent(Enum):
@@ -57,6 +58,14 @@ class IntentClassifier:
             "where was my account opened", "where did i open"
         ]
     }
+
+    COMPILED_INTENT_PATTERNS: Dict[Intent, List[Tuple[Pattern[str], int]]] = {
+        intent: [
+            (re.compile(r'\b' + re.escape(keyword) + r'\b'), len(keyword.split()))
+            for keyword in keywords
+        ]
+        for intent, keywords in INTENT_KEYWORDS.items()
+    }
     
     @staticmethod
     def classify(user_input: str) -> Tuple[Intent, float]:
@@ -64,33 +73,29 @@ class IntentClassifier:
         Classify user input to intent.
         Returns: (intent, confidence_score)
         """
-        import re
         user_input_lower = user_input.lower()
-        scores = {}
-        max_keyword_lengths = {}
-        
-        for intent, keywords in IntentClassifier.INTENT_KEYWORDS.items():
+        token_count = max(len(user_input_lower.split()), 1)
+        best_intent = Intent.UNKNOWN
+        best_score = 0
+        best_max_keyword_len = 0
+
+        for intent, patterns in IntentClassifier.COMPILED_INTENT_PATTERNS.items():
             score = 0
             max_keyword_len = 0
-            for keyword in keywords:
-                # Use word boundaries to avoid partial matches like "open" matching "opening"
-                pattern = r'\b' + re.escape(keyword) + r'\b'
-                if re.search(pattern, user_input_lower):
-                    keyword_score = len(keyword.split())
+            for pattern, keyword_score in patterns:
+                if pattern.search(user_input_lower):
                     score += keyword_score
                     max_keyword_len = max(max_keyword_len, keyword_score)
-            scores[intent] = score
-            max_keyword_lengths[intent] = max_keyword_len
-        
-        if max(scores.values()) == 0:
+
+            if score > best_score or (score == best_score and max_keyword_len > best_max_keyword_len):
+                best_intent = intent
+                best_score = score
+                best_max_keyword_len = max_keyword_len
+
+        if best_score == 0:
             return Intent.UNKNOWN, 0.0
-        
-        max_score = max(scores.values())
-        best_intent = max(
-            [intent for intent, score in scores.items() if score == max_score],
-            key=lambda intent: max_keyword_lengths[intent]
-        )
-        confidence = scores[best_intent] / len(user_input_lower.split())
+
+        confidence = best_score / token_count
         
         return best_intent, confidence
     

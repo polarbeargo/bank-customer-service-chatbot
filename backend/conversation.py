@@ -9,6 +9,7 @@ from customer_data import CustomerDataManager
 from response_handler import ResponseHandler
 from security import SecurityValidator, InputValidator
 from audit_logger import audit_logger, AuditEventType
+from llm_guardrails import LLMGuardrails
 
 
 class ConversationSession:
@@ -24,6 +25,7 @@ class ConversationSession:
         
         self.customer_manager = CustomerDataManager()
         self.response_handler = ResponseHandler()
+        self.guardrails = LLMGuardrails()
     
     def process_message(self, user_message: str) -> str:
         """
@@ -32,6 +34,24 @@ class ConversationSession:
         """
         user_message = InputValidator.sanitize_input(user_message)
         self.conversation_history.append({"user": user_message})
+
+        guardrail_decision = self.guardrails.evaluate_user_message(user_message)
+        if not guardrail_decision.allowed:
+            audit_logger.log_security_violation(
+                session_id=self.session_id,
+                ip_address='unknown',
+                violation_type='llm_guardrail_blocked',
+                details={
+                    'risks': guardrail_decision.risks,
+                    'reason': guardrail_decision.reason
+                }
+            )
+            response = (
+                "I can help with banking support requests only. "
+                "Please ask about services, branches, loans, account opening, or verified account inquiries."
+            )
+            self.conversation_history[-1]["assistant"] = response
+            return response
 
         if self.pending_intent and self.is_verification_pending():
             response = self._handle_verification_input(user_message)
