@@ -43,7 +43,14 @@ logging.getLogger('werkzeug').setLevel(logging.WARNING)
 app = Flask(__name__)
 CORS(app, resources={
     r"/api/*": {
-        "origins": os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(","),
+        "origins": [
+            origin.strip()
+            for origin in os.getenv(
+                "ALLOWED_ORIGINS",
+                "http://localhost:3000,http://localhost:3001"
+            ).split(",")
+            if origin.strip()
+        ],
         "methods": ["GET", "POST", "DELETE", "OPTIONS"],
         "allow_headers": ["Content-Type", "Authorization", "X-Requested-With", "X-Client-Version"],
         "expose_headers": ["X-Total-Count"],
