@@ -7,7 +7,9 @@
     "dev:uv": "USE_UV=1 bash scripts/dev.sh",
     "start": "bash scripts/dev.sh",
     "smoke": "bash scripts/smoke_test.sh",
+    "test:backend": "cd backend && python3 test_chatbot.py",
+    "test:backend:uv": "cd backend && uv run test_chatbot.py",
     "eval:promptfoo": "npx promptfoo eval -c promptfoo/promptfooconfig.yaml",
-    "eval:promptfoo:view": "npx promptfoo view"
+    "eval:promptfoo:view": "npx promptfoo view --port 15501"
   }
 }
