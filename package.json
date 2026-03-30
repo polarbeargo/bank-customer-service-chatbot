@@ -4,7 +4,10 @@
   "version": "1.0.0",
   "scripts": {
     "dev": "bash scripts/dev.sh",
+    "dev:uv": "USE_UV=1 bash scripts/dev.sh",
     "start": "bash scripts/dev.sh",
-    "smoke": "bash scripts/smoke_test.sh"
+    "smoke": "bash scripts/smoke_test.sh",
+    "eval:promptfoo": "npx promptfoo eval -c promptfoo/promptfooconfig.yaml",
+    "eval:promptfoo:view": "npx promptfoo view"
   }
 }
