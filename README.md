@@ -9,6 +9,9 @@ A secure bank customer service chatbot with a **React + TypeScript frontend**, *
 - **React + TypeScript** - Type-safe, scalable frontend
 - **REST API** - Secure endpoints with server-side session state (in-memory)
 - **Streaming Responses** - Server-Sent Events (SSE) for real-time chat
+- **Runtime LLM Guardrails** - Blocks prompt injection, leakage attempts, and unsafe agency/abuse patterns
+- **Layered Validation** - API-level request and outbound response validation, plus engine-level validation on generated response paths.
+- **Structured Audit Logging** - Security and lifecycle events logged from both API handlers and conversation engine
 
 **Architecture Diagram:**
 ```mermaid
@@ -28,9 +31,10 @@ graph TB
       ChatAPI["Chat Endpoint (SSE)<br/>- GET/POST /api/chat/<id>"]
       Middleware["Security & Middleware<br/>- CORS<br/>- Rate Limiter<br/>- Content-Type check (POST only)<br/>- Session ID validation (GET/POST)<br/>- Security Headers"]
       Engine["ConversationSession<br/>- Verification Flow<br/>- History"]
+      Guardrails["LLM Guardrails<br/>- Prompt Injection Block<br/>- Prompt Leakage Block<br/>- Excessive Agency/Abuse Checks"]
       Intent["IntentClassifier"]
       Response["ResponseHandler"]
-      SecVal["SecurityValidator"]
+      SecVal["Validation Layer<br/>- Request validation in route handlers/decorators<br/>- Response validation in API + Engine"]
       Audit["Audit Logger"]
    end
 
@@ -47,11 +51,15 @@ graph TB
    SessionAPI --> Flask
    ChatAPI --> Flask
    Flask --> Middleware
+   Flask --> SecVal
+   Flask --> Audit
    Flask --> Engine
+   Engine --> Guardrails
    Engine --> Intent
    Engine --> Response
    Engine --> SecVal
    Engine --> Customer
+   Response --> Customer
    Response --> Config
    Engine --> Audit
 
@@ -75,7 +83,7 @@ sequenceDiagram
    participant User as 👤 User
    participant Frontend as 🖥️ Frontend<br/>(React + TS)
    participant API as ⚙️ API<br/>(Flask)
-   participant Middleware as 🔒 Middleware<br/>CORS + Limiter + Session ID check
+   participant Middleware as 🔒 Middleware<br/>CORS + Limiter + Session ID format check
    participant Session as 📋 Session<br/>Store
    participant Engine as 💬 ConversationSession
    participant Intent as 🧠 Intent<br/>Classifier
@@ -90,44 +98,62 @@ sequenceDiagram
    Frontend->>API: GET /api/chat/session_id?message=... (SSE)
    Note over Frontend,API: POST /api/chat exists but frontend uses GET for streaming
     
-   API->>Middleware: Rate limits + session ID check (GET/POST)
+   API->>Middleware: Rate limits + session ID format validation (GET/POST)
+   API->>Session: Check session exists
+   alt Session not found
+      API-->>Frontend: 404 Not Found
+      Frontend-->>User: Show error
+   else Session found
    alt GET /api/chat (query param)
       API->>API: Read message from query string
    else POST /api/chat (JSON)
       API->>Middleware: Content-Type check (POST only)
       API->>API: Parse JSON body + require message field
    end
-   alt Invalid Input
-      API-->>Frontend: 400 Bad Request
+   alt Invalid input/content type
+      API-->>Frontend: 400 Bad Request or 415 Unsupported Media Type
       Frontend-->>User: Show error
    else Valid Input
-      API->>Session: Load session
       API->>API: Validate message (inline)
+      API->>Session: Load session object
       API->>Engine: process_message(message)
-      Engine->>Intent: Classify intent
-      Intent-->>Engine: intent + confidence
-        
-      alt Sensitive Query
-         Note over Engine: Check if verified
-         alt Not Verified
-            Note over Engine: Build verification prompt
-            Engine-->>API: Return verification prompt
-         else Verified
-            Engine->>Response: Generate response
-            Response->>Data: Get customer info
-            Data-->>Response: Return data
-            Response-->>Engine: Generated response
+
+      Engine->>Engine: Sanitize input + evaluate guardrails
+      alt Guardrail blocked
+         Engine->>Audit: Log security violation
+         Engine-->>API: Return safe refusal response
+      else Guardrail allowed
+         alt Verification pending
+            Engine->>Engine: Handle verification input
+            Engine->>Audit: Log verification success/failure (as needed)
+            Engine-->>API: Return verification status/response
+         else Normal query path
+            Engine->>Intent: Classify intent
+            Intent-->>Engine: intent + confidence
+            alt Unknown intent
+               Engine-->>API: Return clarify/rephrase response
+            else Known intent
+               alt Sensitive + not verified
+                  Engine-->>API: Return identity verification prompt
+               else Sensitive + verified
+                  Engine->>Response: Generate response
+                  Response->>Data: Get customer info
+                  Data-->>Response: Return data
+                  Response-->>Engine: Generated response
+                  Engine->>Audit: Log sensitive data access
+               else Public query
+                  Engine->>Response: Generate response
+                  Note over Response: Uses config constants (no customer data)
+                  Response-->>Engine: Generated response
+               end
+            end
          end
-      else Public Query
-         Engine->>Response: Generate response
-         Note over Response: Use config constants<br/>(no Data access needed)
-         Response-->>Engine: Generated response
       end
 
-      Engine->>Audit: Log sensitive access (if any)
       API-->>Frontend: SSE Stream<br/>data: {text chunks}<br/>data: {done: true}
       Frontend->>Frontend: useChat updates state
       Frontend-->>User: Display streaming response
+   end
    end
 ```
 
@@ -147,6 +173,7 @@ sequenceDiagram
 - **Python 3.8+** with pip
 - **Node.js 14+** with npm/yarn
 - **Git**
+- **uv** (optional, recommended for faster Python dependency management)
 
 ```
 git clone https://github.com/polarbeargo/bank-customer-service-chatbot.git
@@ -156,16 +183,60 @@ cd bank-customer-service-chatbot
 ### One-Command Dev (Fixed Ports)
 
 ```bash
-# Start both backend + frontend on fixed ports
+# Start backend + frontend on fixed ports
 npm run dev
 
-# Run the smoke test (backend must be running)
+# Same as above, but force uv for backend
+npm run dev:uv
+
+# Smoke test (backend must already be running)
 npm run smoke
 
-# Run backend tests
-cd backend
-python test_chatbot.py
+# Backend tests (from repo root)
+npm run test:backend
+npm run test:backend:uv
 ```
+
+### Using uv (Optional Manual Setup)
+
+`npm run dev` auto-detects `uv` and uses it when available. Use manual setup only if you want to run backend commands directly:
+
+```bash
+cd backend
+uv venv .venv
+uv pip install --python .venv/bin/python -r requirements.txt
+uv run test_chatbot.py
+```
+
+### Promptfoo Evaluation
+
+This project includes Promptfoo-based regression evals for the chatbot API.
+
+What is covered:
+- Public query quality (service and loan guidance)
+- Sensitive-query verification gating
+- Prompt-injection guardrail behavior
+
+Files:
+- `promptfoo/promptfooconfig.yaml`
+- `promptfoo/chatbot_provider.py`
+
+Run locally:
+
+```bash
+# Keep backend running on port 5001
+npm run dev:uv
+
+# In another terminal, run evals
+npm run eval:promptfoo
+
+# Optional: view results in Promptfoo UI
+npm run eval:promptfoo:view
+```
+
+Optional environment variables:
+- `PROMPTFOO_CHATBOT_BASE_URL` (default: `http://localhost:5001`)
+- `PROMPTFOO_HTTP_TIMEOUT` (default: `20` seconds)
 
 ## Security
 
@@ -234,12 +305,59 @@ Permissions-Policy: geolocation=(), microphone=(), camera=()
 
 - Customer records are configuration-based (no database in this sample)
 
+### OWASP LLM Top 10 Integration (2025)
+
+The chatbot now applies runtime controls aligned with OWASP Top 10 for LLM and GenAI applications:
+
+- LLM01 Prompt Injection: Blocks instruction-override and jailbreak-style messages.
+- LLM02 Sensitive Information Disclosure: Redacts and blocks sensitive token patterns in responses/logs.
+- LLM05 Improper Output Handling: Validates every generated response before streaming.
+- LLM06 Excessive Agency: Rejects requests that imply autonomous actions (for example money transfer execution).
+- LLM07 System Prompt Leakage: Detects and blocks attempts to extract or expose internal instructions.
+- LLM10 Unbounded Consumption: Message length and abuse-pattern checks reduce resource exhaustion risk.
+
+Implementation references:
+- `backend/llm_guardrails.py`
+- `backend/conversation.py`
+- `backend/security.py`
+
+## Performance Micro-Benchmark
+
+Micro-benchmark completed with actual numbers.
+
+Run command:
+
+```bash
+uv run backend/benchmarks/micro_benchmark.py
+```
+
+Micro-benchmark corpus size: 2000 calls per round
+
+Results (8 rounds):
+
+- classify baseline mean: `0.260454s`
+- classify optimized mean: `0.043194s`
+- classify speedup: `6.03x` faster (`83.4%` less time)
+- guardrail baseline mean: `0.029369s`
+- guardrail optimized mean: `0.013270s`
+- guardrail speedup: `2.21x` faster (`54.8%` less time)
+
+Interpretation:
+
+- The classifier refactor delivered a major performance gain.
+- Guardrail checks are also significantly faster, though with more variance due to short runtime and regex-heavy branching.
+
+![Benchmark Results](image/benchmark.png)
+
 ## Technology Stack
 
 ### Backend
 - Python 3.8+
 - Flask 2.3+
 - Flask-CORS 4.0+
+- Flask-Limiter 3.5+
+- python-dotenv 1.0+
+- Gunicorn 21.2+
 
 ### Frontend
 - React 18+
@@ -479,4 +597,18 @@ Bot: Verification failed: Invalid date of birth format (use YYYY/MM/DD)
 ![Chatbot Demo](image/BankCustomerServiceChatbo.gif)
 
 #### Setup
+
+1. Setup
 ![Setup](image/setup.gif)
+
+2. uv workflow
+![uv workflow](image/uv1.gif)
+
+3. Smoke test
+![smoke test](image/smoke.gif)
+
+4. Promptfoo eval
+![promptfoo eval](image/promptfoo.gif)
+
+5. Promptfoo view
+![promptfoo view](image/promptfoo_view.gif)
