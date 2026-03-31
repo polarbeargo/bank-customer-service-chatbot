@@ -195,6 +195,12 @@ npm run smoke
 # Backend tests (from repo root)
 npm run test:backend
 npm run test:backend:uv
+
+# Local security CI dry-run (tests + promptfoo eval)
+npm run ci:security:local
+
+# Full local security CI dry-run (includes promptfoo red-team)
+npm run ci:security:local:full
 ```
 
 ### Using uv (Optional Manual Setup)
@@ -612,3 +618,6 @@ Bot: Verification failed: Invalid date of birth format (use YYYY/MM/DD)
 
 5. Promptfoo view
 ![promptfoo view](image/promptfoo_view.gif)
+
+6. Red teaming (full local security CI dry-run)
+![red teaming](image/red_teaming.gif)
