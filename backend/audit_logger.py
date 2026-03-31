@@ -5,6 +5,7 @@ Implements OWASP logging and monitoring requirements.
 
 import logging
 import json
+from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, Optional
 from enum import Enum
@@ -31,8 +32,11 @@ class AuditLogger:
     def __init__(self):
         self.logger = logging.getLogger('audit')
         self.logger.setLevel(logging.INFO)
-        
-        handler = logging.FileHandler('logs/audit.log')
+
+        log_dir = Path(__file__).resolve().parent / 'logs'
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        handler = logging.FileHandler(log_dir / 'audit.log')
         handler.setLevel(logging.INFO)
         formatter = logging.Formatter(
             '{"timestamp": "%(asctime)s", "level": "%(levelname)s", "message": %(message)s}'
