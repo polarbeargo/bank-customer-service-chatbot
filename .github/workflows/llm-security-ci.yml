@@ -1,0 +1,178 @@
+name: LLM Security CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main, develop]
+    paths:
+      - "backend/**"
+      - "promptfoo/**"
+      - "package.json"
+      - ".github/workflows/llm-security-ci.yml"
+  schedule:
+    - cron: "0 2 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend-tests-and-eval:
+    name: Backend Tests + Promptfoo Eval
+    runs-on: ubuntu-latest
+    if: github.event_name != 'schedule'
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Set up backend environment with uv
+        run: |
+          set -euo pipefail
+          uv venv backend/.venv
+          uv pip install --python backend/.venv/bin/python -r backend/requirements.txt
+
+      - name: Run backend tests (strict gate)
+        run: |
+          set -euo pipefail
+          (
+            cd backend
+            uv run --python .venv/bin/python test_chatbot.py
+          ) | tee backend-test-output.txt
+          grep -q "Failed: 0" backend-test-output.txt
+
+      - name: Start backend API
+        env:
+          PORT: "5001"
+        run: |
+          set -euo pipefail
+          ( cd backend && uv run --python .venv/bin/python app.py ) > backend-ci.log 2>&1 &
+          echo $! > backend.pid
+
+      - name: Wait for backend health
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 60); do
+            if curl -fsS "http://localhost:5001/api/health" > /dev/null; then
+              echo "Backend is ready"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Backend failed to become ready"
+          exit 1
+
+      - name: Promptfoo eval (strict gate)
+        env:
+          PROMPTFOO_CHATBOT_BASE_URL: "http://localhost:5001"
+          PROMPTFOO_HTTP_TIMEOUT: "20"
+        run: |
+          set -euo pipefail
+          npx promptfoo eval -c promptfoo/promptfooconfig.yaml
+
+      - name: Upload CI logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-debug-logs
+          path: |
+            backend-ci.log
+            backend-test-output.txt
+          retention-days: 14
+
+      - name: Stop backend API
+        if: always()
+        run: |
+          if [ -f backend.pid ]; then
+            kill "$(cat backend.pid)" || true
+          fi
+
+  promptfoo-redteam:
+    name: Promptfoo Red-Team (Scheduled)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Set up backend environment with uv
+        run: |
+          set -euo pipefail
+          uv venv backend/.venv
+          uv pip install --python backend/.venv/bin/python -r backend/requirements.txt
+
+      - name: Start backend API
+        env:
+          PORT: "5001"
+        run: |
+          set -euo pipefail
+          ( cd backend && uv run --python .venv/bin/python app.py ) > backend-redteam.log 2>&1 &
+          echo $! > backend.pid
+
+      - name: Wait for backend health
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 60); do
+            if curl -fsS "http://localhost:5001/api/health" > /dev/null; then
+              echo "Backend is ready"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Backend failed to become ready"
+          exit 1
+
+      - name: Promptfoo red-team (practical gate)
+        env:
+          PROMPTFOO_CHATBOT_BASE_URL: "http://localhost:5001"
+          PROMPTFOO_HTTP_TIMEOUT: "30"
+        run: |
+          set -euo pipefail
+          # Use explicit config path to avoid the default root lookup failure.
+          npx promptfoo redteam run --config promptfoo/promptfooconfig.yaml
+
+      - name: Upload red-team logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: redteam-debug-logs
+          path: |
+            backend-redteam.log
+          retention-days: 14
+
+      - name: Stop backend API
+        if: always()
+        run: |
+          if [ -f backend.pid ]; then
+            kill "$(cat backend.pid)" || true
+          fi

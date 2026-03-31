@@ -10,6 +10,8 @@
     "test:backend": "cd backend && python3 test_chatbot.py",
     "test:backend:uv": "cd backend && uv run test_chatbot.py",
     "eval:promptfoo": "npx promptfoo eval -c promptfoo/promptfooconfig.yaml",
-    "eval:promptfoo:view": "npx promptfoo view --port 15501"
+    "eval:promptfoo:view": "npx promptfoo view --port 15501",
+    "ci:security:local": "RUN_REDTEAM=0 bash scripts/ci_security_local.sh",
+    "ci:security:local:full": "RUN_REDTEAM=1 bash scripts/ci_security_local.sh"
   }
 }
