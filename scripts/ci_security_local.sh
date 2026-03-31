@@ -47,10 +47,12 @@ PROMPTFOO_HTTP_TIMEOUT="20" \
   npx promptfoo eval -c promptfoo/promptfooconfig.yaml
 
 if [[ "${RUN_REDTEAM:-0}" == "1" ]]; then
-  echo "[CI-LOCAL] Running Promptfoo red-team"
+  echo "[CI-LOCAL] Running Promptfoo red-team (throttled: ~40 cases, concurrency=1)"
   PROMPTFOO_CHATBOT_BASE_URL="http://localhost:5001" \
   PROMPTFOO_HTTP_TIMEOUT="30" \
-    npx promptfoo redteam run --config promptfoo/promptfooconfig.yaml
+    npx promptfoo redteam run \
+      --config promptfoo/redteam-local.yaml \
+      --max-concurrency 1
 else
   echo "[CI-LOCAL] Skipping Promptfoo red-team (set RUN_REDTEAM=1 to enable)"
 fi
