@@ -158,8 +158,8 @@ jobs:
           PROMPTFOO_HTTP_TIMEOUT: "30"
         run: |
           set -euo pipefail
-          # Use explicit config path to avoid the default root lookup failure.
-          npx promptfoo redteam run --config promptfoo/promptfooconfig.yaml
+          # Use the throttled red-team config to keep scheduled CI runtime bounded.
+          npx promptfoo redteam run --config promptfoo/redteam-local.yaml
 
       - name: Upload red-team logs on failure
         if: failure()
